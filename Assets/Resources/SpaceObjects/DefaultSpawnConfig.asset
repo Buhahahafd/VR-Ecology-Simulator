@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0cdb2007aa9112f4b868164018c780e6, type: 3}
+  m_Name: DefaultSpawnConfig
+  m_EditorClassIdentifier: 
+  satellites:
+  - {fileID: 11400000, guid: 2f2b87d1af3c7df40bf8d9dee61fcc9c, type: 2}
+  - {fileID: 11400000, guid: fc71c17e717c1f04288e3c3322e5bd83, type: 2}
+  - {fileID: 11400000, guid: b419fb67157cf854fa4d73de1f5a7319, type: 2}
+  - {fileID: 11400000, guid: 51551e0f3175ed244b627ed32de64aa2, type: 2}
+  debrisList:
+  - {fileID: 11400000, guid: 789734705bc455a429a333d9b0bd4344, type: 2}
+  - {fileID: 11400000, guid: af7f2161617ded648a1a4f475914f8e4, type: 2}
+  - {fileID: 11400000, guid: b7f8608169ef6de458e8aa3061e3e75e, type: 2}
+  - {fileID: 11400000, guid: b14477d86cb4b6a41b6be48008478121, type: 2}
+  - {fileID: 11400000, guid: 766f8ac54f8e56045a556e206f78c02b, type: 2}
+  - {fileID: 11400000, guid: a61f2812afdd08e42a866d916a635bf1, type: 2}

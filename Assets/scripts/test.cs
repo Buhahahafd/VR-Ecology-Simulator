@@ -15,6 +15,5 @@ public class test : MonoBehaviour
     void Update()
     {
         float value = testActionValue.action.ReadValue<float>();
-        Debug.Log("Value:" + value);
     }
 }
