@@ -3390,7 +3390,8 @@ MonoBehaviour:
   panelHeightOffset: 0
   panelWorldWidth: 3.2
   panelWorldHeight: 2
-  riskLabelPrefab: {fileID: 0}
+  followSpeed: 4
+  toggleAction: {fileID: 0}
   earthTransform: {fileID: 543450652505249003}
 --- !u!4 &1517002490
 Transform:
@@ -4536,6 +4537,7 @@ GameObject:
   - component: {fileID: 1949857869}
   - component: {fileID: 1949857872}
   - component: {fileID: 1949857873}
+  - component: {fileID: 1949857874}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -4630,6 +4632,26 @@ MonoBehaviour:
   bButtonAction: {fileID: -5908353012961274365, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   fadeInDuration: 0.18
   fadeOutDuration: 0.14
+--- !u!114 &1949857874
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1949857868}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 20ec71d4af372874bbc976fb4216580d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  xrOrigin: {fileID: 0}
+  centralBody: {fileID: 543450652505249003}
+  minOrbitRadius: 1.5
+  maxOrbitRadius: 12
+  mouseSensitivity: 0.25
+  moveSpeed: 3
+  scrollZoomSpeed: 2
+  keyZoomSpeed: 1.5
 --- !u!1 &1959091283
 GameObject:
   m_ObjectHideFlags: 0

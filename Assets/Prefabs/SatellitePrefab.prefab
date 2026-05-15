@@ -15,6 +15,8 @@ GameObject:
   - component: {fileID: 7084528222712036563}
   - component: {fileID: 5200425280986295182}
   - component: {fileID: 1943390600424334492}
+  - component: {fileID: 2150944099827304655}
+  - component: {fileID: 2157199520685183694}
   m_Layer: 0
   m_Name: SatellitePrefab
   m_TagString: Untagged
@@ -89,7 +91,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 9e3967bb9e8d7e0458219ff839b53bc1, type: 2}
+  - {fileID: 2100000, guid: 4078938924220784abe36f0100104e45, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -139,7 +141,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_InteractionManager: {fileID: 0}
-  m_Colliders: []
+  m_Colliders:
+  - {fileID: 7692204827684277789}
   m_InteractionLayers:
     m_Bits: 1
   m_DistanceCalculationMode: 1
@@ -212,3 +215,34 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   hoverScaleMultiplier: 1.6
   infoPanel: {fileID: 0}
+  actionPanel: {fileID: 0}
+--- !u!114 &2150944099827304655
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6414429915330431080}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 55b7f63525b108b49bb1f82604591ca2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxFuel: 100
+  orbitManeuverCost: 30
+  deBrakeDeorbitCost: 60
+  droneDeployCost: 20
+  maneuverAltitudeDelta: 0.3
+  maneuverDuration: 3
+--- !u!114 &2157199520685183694
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6414429915330431080}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4c32dfebc029f1448f8b0dd47ae66fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

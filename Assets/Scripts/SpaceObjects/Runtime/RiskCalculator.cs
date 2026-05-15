@@ -10,60 +10,68 @@ namespace SpaceDebris
         High
     }
 
+    public enum DangerLevel
+    {
+        Safe,     // green  — no threat
+        Watch,    // yellow — monitor
+        Maneuver, // orange — action required
+        Critical  // red    — imminent collision
+    }
+
     /// <summary>
-    /// Periodically evaluates distances between all satellites and debris objects.
-    /// Updates debris glow colours and satellite warning colours accordingly.
-    /// Raises events so the UI layer can react without being coupled to physics.
+    /// Periodically evaluates proximity between all active satellites and assigns
+    /// a collision risk level to each one based on its nearest neighbour distance.
+    ///
+    /// Also computes estimated time to closest approach (TCA) and a four-tier
+    /// DangerLevel for use in the UI and consequence systems.
     /// </summary>
     public class RiskCalculator : MonoBehaviour
     {
         [Header("Risk Thresholds (scene units)")]
-        [SerializeField] private float highRiskDistance = 5f;
-        [SerializeField] private float mediumRiskDistance = 15f;
+        [Tooltip("Satellites closer than this are HIGH risk (red).")]
+        [SerializeField] private float highRiskDistance = 0.4f;
+
+        [Tooltip("Satellites closer than this are MEDIUM risk (yellow).")]
+        [SerializeField] private float mediumRiskDistance = 0.9f;
+
+        [Header("Danger Level Thresholds (scene units)")]
+        [Tooltip("Below this distance → Critical (red).")]
+        [SerializeField] private float criticalDistance = 0.35f;
+
+        [Tooltip("Below this distance → Maneuver required (orange).")]
+        [SerializeField] private float maneuverDistance = 0.65f;
+
+        [Tooltip("Below this distance → Watch (yellow).")]
+        [SerializeField] private float watchDistance = 1.1f;
 
         [Header("Timing")]
         [Tooltip("How often risk is re-evaluated in seconds.")]
-        [SerializeField] private float evaluationInterval = 0.5f;
+        [SerializeField] private float evaluationInterval = 0.3f;
 
-        [Header("Warning Colours for Satellites")]
-        [SerializeField] private Color satelliteHighRiskColor = new Color(1f, 0.2f, 0.2f);
-        [SerializeField] private Color satelliteNormalColor = Color.cyan;
+        [Header("Warning Colours")]
+        [SerializeField] private Color mediumRiskColor = new Color(1f, 0.75f, 0f);
+        [SerializeField] private Color highRiskColor   = new Color(1f, 0.15f, 0.1f);
+
+        // ── Internal state ────────────────────────────────────────────────────
 
         private readonly List<SatelliteObject> satellites = new();
-        private readonly List<DebrisObject> debrisList = new();
+        private readonly List<DebrisObject>    debrisList = new();
+
+        private readonly Dictionary<SatelliteObject, RiskEntry> riskEntries = new();
+
         private float timer;
 
-        // Maps each debris → its current risk level (to avoid redundant material updates).
-        private readonly Dictionary<DebrisObject, RiskLevel> debrisRiskCache = new();
+        // ── Events ────────────────────────────────────────────────────────────
 
-        // Maps each satellite → nearest dangerous debris (can be null).
-        private readonly Dictionary<SatelliteObject, DebrisObject> satelliteNearestDanger = new();
+        /// <summary>Raised when a satellite's risk level changes.</summary>
+        public event System.Action<SatelliteObject, SatelliteObject, RiskLevel> OnSatelliteRiskChanged;
 
-        /// <summary>
-        /// Raised when a satellite's nearest dangerous debris changes.
-        /// Parameters: satellite, nearestDangerousDebris (null if none), riskLevel.
-        /// </summary>
-        public event System.Action<SatelliteObject, DebrisObject, RiskLevel> OnSatelliteRiskChanged;
+        // Kept for DangerLineRenderer compatibility.
+        public event System.Action<SatelliteObject, DebrisObject, RiskLevel> OnSatelliteRiskChangedLegacy;
 
-        private void Start()
-        {
-            // Auto-discover all orbital objects already in the scene.
-            RefreshObjectLists();
-        }
+        // ── Unity lifecycle ───────────────────────────────────────────────────
 
-        /// <summary>
-        /// Re-populates satellite and debris lists. Call after spawning new objects.
-        /// </summary>
-        public void RefreshObjectLists()
-        {
-            satellites.Clear();
-            debrisList.Clear();
-            debrisRiskCache.Clear();
-            satelliteNearestDanger.Clear();
-
-            satellites.AddRange(FindObjectsByType<SatelliteObject>(FindObjectsSortMode.None));
-            debrisList.AddRange(FindObjectsByType<DebrisObject>(FindObjectsSortMode.None));
-        }
+        private void Start() => RefreshObjectLists();
 
         private void Update()
         {
@@ -73,90 +81,187 @@ namespace SpaceDebris
             EvaluateAllRisks();
         }
 
+        // ── Public API ────────────────────────────────────────────────────────
+
+        /// <summary>Re-populates satellite and debris lists. Call after spawning new objects.</summary>
+        public void RefreshObjectLists()
+        {
+            satellites.Clear();
+            debrisList.Clear();
+            riskEntries.Clear();
+
+            satellites.AddRange(FindObjectsByType<SatelliteObject>(FindObjectsSortMode.None));
+            debrisList.AddRange(FindObjectsByType<DebrisObject>(FindObjectsSortMode.None));
+        }
+
+        /// <summary>Returns the current risk level of the given satellite.</summary>
+        public RiskLevel GetSatelliteRiskLevel(SatelliteObject sat) =>
+            riskEntries.TryGetValue(sat, out RiskEntry e) ? e.Risk : RiskLevel.Low;
+
+        /// <summary>Returns the current danger level of the given satellite.</summary>
+        public DangerLevel GetDangerLevel(SatelliteObject sat) =>
+            riskEntries.TryGetValue(sat, out RiskEntry e) ? e.Danger : DangerLevel.Safe;
+
+        /// <summary>Returns the nearest threatening satellite or null.</summary>
+        public SatelliteObject GetNearestThreat(SatelliteObject sat) =>
+            riskEntries.TryGetValue(sat, out RiskEntry e) ? e.NearestThreat : null;
+
+        /// <summary>Returns the world-space distance to the nearest threat in scene units.</summary>
+        public float GetNearestThreatDistance(SatelliteObject sat) =>
+            riskEntries.TryGetValue(sat, out RiskEntry e) ? e.NearestDistance : float.MaxValue;
+
+        /// <summary>
+        /// Returns estimated time (seconds) until the nearest threat reaches its closest point.
+        /// Returns float.MaxValue if no threat exists or objects are diverging.
+        /// </summary>
+        public float GetEstimatedTimeToClosestApproach(SatelliteObject sat) =>
+            riskEntries.TryGetValue(sat, out RiskEntry e) ? e.EstimatedTCA : float.MaxValue;
+
+        /// <summary>Returns the collision probability estimate (0–1).</summary>
+        public float GetCollisionProbability(SatelliteObject sat) =>
+            riskEntries.TryGetValue(sat, out RiskEntry e) ? e.CollisionProbability : 0f;
+
+        /// <summary>Returns a localised recommended action string for the given satellite.</summary>
+        public string GetRecommendedAction(SatelliteObject sat)
+        {
+            DangerLevel danger = GetDangerLevel(sat);
+            return danger switch
+            {
+                DangerLevel.Critical  => "Немедленный манёвр уклонения!",
+                DangerLevel.Maneuver  => "Изменить орбиту или снизить скорость",
+                DangerLevel.Watch     => "Продолжать наблюдение",
+                _                     => "Угроза отсутствует"
+            };
+        }
+
+        // Legacy API stubs kept for compatibility.
+        public RiskLevel GetDebrisRisk(DebrisObject debris) => RiskLevel.Low;
+        public (DebrisObject nearestDebris, RiskLevel risk) GetSatelliteRisk(SatelliteObject satellite)
+            => (null, GetSatelliteRiskLevel(satellite));
+
+        // ── Private: evaluation ───────────────────────────────────────────────
+
         private void EvaluateAllRisks()
         {
-            // Reset debris risk cache each cycle.
-            foreach (var debris in debrisList)
+            for (int i = 0; i < satellites.Count; i++)
             {
-                debrisRiskCache[debris] = RiskLevel.Low;
-            }
+                SatelliteObject sat = satellites[i];
+                if (sat == null) continue;
 
-            foreach (var satellite in satellites)
-            {
-                if (satellite == null) continue;
+                RiskLevel    maxRisk     = RiskLevel.Low;
+                DangerLevel  danger      = DangerLevel.Safe;
+                SatelliteObject nearestThreat = null;
+                float nearestDist  = float.MaxValue;
+                float tca          = float.MaxValue;
+                float probability  = 0f;
 
-                DebrisObject nearestDanger = null;
-                RiskLevel maxRisk = RiskLevel.Low;
-                float nearestDist = float.MaxValue;
-
-                foreach (var debris in debrisList)
+                for (int j = 0; j < satellites.Count; j++)
                 {
-                    if (debris == null) continue;
+                    if (i == j) continue;
+                    SatelliteObject other = satellites[j];
+                    if (other == null) continue;
 
-                    float dist = Vector3.Distance(satellite.transform.position, debris.transform.position);
-                    RiskLevel risk = ClassifyRisk(dist);
+                    float dist = Vector3.Distance(sat.transform.position, other.transform.position);
+                    RiskLevel    risk   = ClassifyRisk(dist);
+                    DangerLevel  dLevel = ClassifyDanger(dist);
 
-                    // Update per-debris risk (take the worst case across all satellites).
-                    if (risk > debrisRiskCache[debris])
-                        debrisRiskCache[debris] = risk;
-
-                    if (risk > maxRisk || (risk == maxRisk && dist < nearestDist))
+                    if (dist < nearestDist)
                     {
-                        maxRisk = risk;
-                        nearestDist = dist;
-                        nearestDanger = debris;
+                        nearestDist   = dist;
+                        nearestThreat = other;
+
+                        // Estimate TCA using relative velocity projection.
+                        tca = EstimateTCA(sat, other, dist);
                     }
+
+                    if (risk > maxRisk)   maxRisk = risk;
+                    if (dLevel > danger)  danger  = dLevel;
                 }
 
-                // Update satellite colour.
-                Color satColor = maxRisk == RiskLevel.High ? satelliteHighRiskColor : satelliteNormalColor;
-                satellite.SetColor(satColor);
+                // Collision probability ∈ [0,1]: smooth falloff based on distance to high-risk threshold.
+                if (nearestThreat != null)
+                {
+                    float t = Mathf.InverseLerp(mediumRiskDistance, highRiskDistance, nearestDist);
+                    probability = Mathf.Clamp01(t * t);
+                }
 
-                // Raise event only when the situation changes.
-                bool changed = !satelliteNearestDanger.TryGetValue(satellite, out DebrisObject prevDanger)
-                               || prevDanger != nearestDanger;
+                // Write / update entry.
+                bool existed = riskEntries.TryGetValue(sat, out RiskEntry prev);
+                var entry = new RiskEntry(maxRisk, danger, nearestThreat, nearestDist, tca, probability);
+                riskEntries[sat] = entry;
 
+                // Apply colour to satellite.
+                Color targetColor = maxRisk switch
+                {
+                    RiskLevel.High   => highRiskColor,
+                    RiskLevel.Medium => mediumRiskColor,
+                    _                => sat.SatelliteData != null
+                                           ? sat.SatelliteData.displayColor
+                                           : Color.cyan
+                };
+                sat.SetColor(targetColor);
+
+                bool changed = !existed || prev.Risk != maxRisk;
                 if (changed)
                 {
-                    satelliteNearestDanger[satellite] = nearestDanger;
-                    OnSatelliteRiskChanged?.Invoke(satellite, nearestDanger, maxRisk);
+                    OnSatelliteRiskChanged?.Invoke(sat, nearestThreat, maxRisk);
+
+                    // Push risk level to orbit path so it changes colour/thickness reactively.
+                    if (sat.TryGetComponent<OrbitPathRenderer>(out OrbitPathRenderer opr))
+                        opr.UpdateRiskLevel(maxRisk);
                 }
             }
+        }
 
-            // Apply colours to debris based on worst-case risk across all satellites.
-            foreach (var debris in debrisList)
-            {
-                if (debris == null) continue;
-                debris.ApplyDangerColor(debrisRiskCache[debris]);
-            }
+        private static float EstimateTCA(SatelliteObject a, SatelliteObject b, float currentDist)
+        {
+            // Approximate: Δv_rel projected onto separation axis.
+            Vector3 separation = b.transform.position - a.transform.position;
+            Vector3 relVel     = b.GetLinearVelocity() - a.GetLinearVelocity();
+
+            // Closing speed: negative = approaching.
+            float closingSpeed = Vector3.Dot(relVel, separation.normalized);
+            if (closingSpeed >= 0f) return float.MaxValue; // diverging
+
+            return currentDist / (-closingSpeed);
         }
 
         private RiskLevel ClassifyRisk(float distance)
         {
-            if (distance <= highRiskDistance) return RiskLevel.High;
+            if (distance <= highRiskDistance)   return RiskLevel.High;
             if (distance <= mediumRiskDistance) return RiskLevel.Medium;
             return RiskLevel.Low;
         }
 
-        /// <summary>
-        /// Returns the current risk level of the given debris object.
-        /// </summary>
-        public RiskLevel GetDebrisRisk(DebrisObject debris)
+        private DangerLevel ClassifyDanger(float distance)
         {
-            return debrisRiskCache.TryGetValue(debris, out RiskLevel r) ? r : RiskLevel.Low;
+            if (distance <= criticalDistance)  return DangerLevel.Critical;
+            if (distance <= maneuverDistance)  return DangerLevel.Maneuver;
+            if (distance <= watchDistance)     return DangerLevel.Watch;
+            return DangerLevel.Safe;
         }
 
-        /// <summary>
-        /// Returns the nearest dangerous debris for a satellite and its risk level.
-        /// </summary>
-        public (DebrisObject nearestDebris, RiskLevel risk) GetSatelliteRisk(SatelliteObject satellite)
+        // ── Nested data ───────────────────────────────────────────────────────
+
+        private readonly struct RiskEntry
         {
-            if (satelliteNearestDanger.TryGetValue(satellite, out DebrisObject d))
+            public readonly RiskLevel       Risk;
+            public readonly DangerLevel     Danger;
+            public readonly SatelliteObject NearestThreat;
+            public readonly float           NearestDistance;
+            public readonly float           EstimatedTCA;
+            public readonly float           CollisionProbability;
+
+            public RiskEntry(RiskLevel risk, DangerLevel danger,
+                             SatelliteObject threat, float dist, float tca, float prob)
             {
-                RiskLevel r = d != null ? debrisRiskCache.GetValueOrDefault(d, RiskLevel.Low) : RiskLevel.Low;
-                return (d, r);
+                Risk                = risk;
+                Danger              = danger;
+                NearestThreat       = threat;
+                NearestDistance     = dist;
+                EstimatedTCA        = tca;
+                CollisionProbability = prob;
             }
-            return (null, RiskLevel.Low);
         }
     }
 }

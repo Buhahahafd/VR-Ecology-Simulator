@@ -31,14 +31,23 @@ namespace SpaceDebris
         }
 
         /// <summary>
-        /// Updates the glow colour, e.g. when danger level changes.
-        /// Satellites use high emission (3×) to stand out as active operational objects.
+        /// Updates the glow colour.
+        /// Active satellites: high emission (3×) — bright and readable.
+        /// Inactive/decommissioned: dim emission (1×) — still visible but not dominant.
+        /// Risk colours (yellow, red) always use full emission regardless of status.
         /// </summary>
         public void SetColor(Color color)
         {
+            bool isRiskColor = satelliteData == null
+                               || color != satelliteData.displayColor;
+
+            float emissionMultiplier = isRiskColor
+                ? 3.5f
+                : (satelliteData?.status == SatelliteStatus.Active ? 3f : 1.2f);
+
             objectRenderer.GetPropertyBlock(propertyBlock);
             propertyBlock.SetColor(BaseColorID, color);
-            propertyBlock.SetColor(EmissionColorID, color * 3f);
+            propertyBlock.SetColor(EmissionColorID, color * emissionMultiplier);
             objectRenderer.SetPropertyBlock(propertyBlock);
         }
 

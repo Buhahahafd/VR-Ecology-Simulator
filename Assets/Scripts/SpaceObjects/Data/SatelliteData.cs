@@ -21,6 +21,12 @@ namespace SpaceDebris
 
         [Tooltip("World-space scale of the glowing sphere.")]
         public float displaySize = 0.12f;
+
+        /// <summary>
+        /// Orbit altitude above Earth's surface in scene units.
+        /// Populated at runtime by ProceduralOrbitGenerator; not serialised.
+        /// </summary>
+        [System.NonSerialized] public float altitudeSceneUnits = 0.5f;
     }
 
     public enum SatelliteType

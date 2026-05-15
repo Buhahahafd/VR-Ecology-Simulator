@@ -25,6 +25,25 @@ namespace SpaceDebris
         private float orbitRadius;
         private Quaternion orbitalPlaneRotation;
 
+        // Velocity tracking for TCA estimation.
+        private Vector3 previousPosition;
+        private Vector3 linearVelocity;
+
+        /// <summary>World-space radius of this object's orbit. Valid after Start().</summary>
+        public float OrbitRadius => orbitRadius;
+
+        /// <summary>Current altitude above Earth's surface in scene units.</summary>
+        public float OrbitAltitudeUnits => orbitAltitudeUnits;
+
+        /// <summary>Rotation that tilts the orbital plane by inclination. Valid after Start().</summary>
+        public Quaternion OrbitalPlaneRotation => orbitalPlaneRotation;
+
+        /// <summary>World position of the central body. Valid after Start().</summary>
+        public Vector3 CentralBodyPosition => centralBody != null ? centralBody.position : Vector3.zero;
+
+        /// <summary>Approximate world-space velocity vector (units/second), updated each frame.</summary>
+        public Vector3 GetLinearVelocity() => linearVelocity;
+
         protected virtual void Awake()
         {
             objectRenderer = GetComponent<Renderer>();
@@ -60,6 +79,9 @@ namespace SpaceDebris
             objectRenderer.material.EnableKeyword("_EMISSION");
 
             ApplyDisplaySettings();
+
+            // Seed velocity tracking.
+            previousPosition = transform.position;
         }
 
         protected virtual void Update()
@@ -75,12 +97,23 @@ namespace SpaceDebris
             // Orbit around the central body's world position (Earth), not the world origin.
             Vector3 center = centralBody != null ? centralBody.position : Vector3.zero;
             transform.position = center + orbitalPlaneRotation * localOffset;
+
+            // Update velocity estimate.
+            if (Time.deltaTime > 0f)
+                linearVelocity = (transform.position - previousPosition) / Time.deltaTime;
+            previousPosition = transform.position;
         }
 
-        /// <summary>Sets the orbit altitude above Earth's surface in scene units at runtime.</summary>
+        /// <summary>Sets the orbit altitude above Earth's surface in scene units at runtime.
+        /// Immediately updates the orbit radius used in the next Update() cycle.</summary>
         public void SetOrbitAltitudeUnits(float units)
         {
             orbitAltitudeUnits = units;
+            if (centralBody != null)
+            {
+                float earthVisualRadius = centralBody.lossyScale.x * 0.5f;
+                orbitRadius = earthVisualRadius + orbitAltitudeUnits;
+            }
         }
 
         /// <summary>Returns the assigned SpaceObjectData.</summary>

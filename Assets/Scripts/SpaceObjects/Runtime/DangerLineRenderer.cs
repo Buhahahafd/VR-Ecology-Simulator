@@ -3,31 +3,39 @@ using UnityEngine;
 namespace SpaceDebris
 {
     /// <summary>
-    /// Draws a red line between a satellite and its nearest high-risk debris object.
+    /// Draws a warning line between the two satellites with the highest collision risk.
     /// Listens to RiskCalculator.OnSatelliteRiskChanged and updates the LineRenderer accordingly.
+    /// Line colour reflects severity: amber for Medium, red for High.
     /// </summary>
     [RequireComponent(typeof(LineRenderer))]
     public class DangerLineRenderer : MonoBehaviour
     {
         [SerializeField] private RiskCalculator riskCalculator;
-        [SerializeField] private Color dangerLineColor = new Color(1f, 0.1f, 0.1f, 0.85f);
-        [SerializeField] private float lineWidth = 0.02f;
+
+        [Tooltip("Line colour when two satellites are at HIGH collision risk.")]
+        [SerializeField] private Color dangerLineColor  = new Color(1f, 0.1f, 0.1f, 0.9f);
+
+        [Tooltip("Line colour when two satellites are at MEDIUM collision risk.")]
+        [SerializeField] private Color warningLineColor = new Color(1f, 0.75f, 0f, 0.7f);
+
+        [SerializeField] private float lineWidth = 0.015f;
 
         private LineRenderer lineRenderer;
 
-        // Currently tracked satellite-debris pair.
-        private SatelliteObject trackedSatellite;
-        private DebrisObject trackedDebris;
+        // Currently tracked pair.
+        private SatelliteObject trackedSatelliteA;
+        private SatelliteObject trackedSatelliteB;
+        private RiskLevel       trackedRisk;
 
         private void Awake()
         {
             lineRenderer = GetComponent<LineRenderer>();
             lineRenderer.positionCount = 0;
-            lineRenderer.startWidth = lineWidth;
-            lineRenderer.endWidth = lineWidth;
-            lineRenderer.startColor = dangerLineColor;
-            lineRenderer.endColor = dangerLineColor;
+            lineRenderer.startWidth    = lineWidth;
+            lineRenderer.endWidth      = lineWidth;
             lineRenderer.useWorldSpace = true;
+            lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            lineRenderer.receiveShadows    = false;
         }
 
         private void OnEnable()
@@ -42,32 +50,38 @@ namespace SpaceDebris
                 riskCalculator.OnSatelliteRiskChanged -= OnRiskChanged;
         }
 
-        private void OnRiskChanged(SatelliteObject satellite, DebrisObject nearestDebris, RiskLevel risk)
+        private void OnRiskChanged(SatelliteObject satellite, SatelliteObject nearestThreat, RiskLevel risk)
         {
-            if (risk == RiskLevel.High && nearestDebris != null)
+            if (risk >= RiskLevel.Medium && nearestThreat != null)
             {
-                trackedSatellite = satellite;
-                trackedDebris = nearestDebris;
+                trackedSatelliteA = satellite;
+                trackedSatelliteB = nearestThreat;
+                trackedRisk       = risk;
                 lineRenderer.positionCount = 2;
+
+                Color lineColor = risk == RiskLevel.High ? dangerLineColor : warningLineColor;
+                lineRenderer.startColor = lineColor;
+                lineRenderer.endColor   = lineColor;
             }
-            else
+            else if (trackedSatelliteA == satellite)
             {
-                trackedSatellite = null;
-                trackedDebris = null;
+                // Clear line only if we were tracking this satellite.
+                trackedSatelliteA = null;
+                trackedSatelliteB = null;
                 lineRenderer.positionCount = 0;
             }
         }
 
         private void LateUpdate()
         {
-            if (trackedSatellite == null || trackedDebris == null)
+            if (trackedSatelliteA == null || trackedSatelliteB == null)
             {
                 lineRenderer.positionCount = 0;
                 return;
             }
 
-            lineRenderer.SetPosition(0, trackedSatellite.transform.position);
-            lineRenderer.SetPosition(1, trackedDebris.transform.position);
+            lineRenderer.SetPosition(0, trackedSatelliteA.transform.position);
+            lineRenderer.SetPosition(1, trackedSatelliteB.transform.position);
         }
     }
 }

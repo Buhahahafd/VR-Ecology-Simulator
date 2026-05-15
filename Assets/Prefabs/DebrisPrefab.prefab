@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 7837413431680953758}
   - component: {fileID: 5924711622801575513}
   - component: {fileID: 6129622770639013710}
+  - component: {fileID: 4755052459434653125}
   m_Layer: 0
   m_Name: DebrisPrefab
   m_TagString: Untagged
@@ -89,7 +90,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 0de9141a51ad67e4fa9991e4c4005f46, type: 2}
+  - {fileID: 2100000, guid: af23f23726d3938478fb48b1d6bec1af, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -126,6 +127,7 @@ MonoBehaviour:
   data: {fileID: 0}
   centralBody: {fileID: 0}
   orbitAltitudeUnits: 0.5
+  tumbleSpeed: {x: 23, y: 47, z: 11}
 --- !u!114 &5924711622801575513
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -139,7 +141,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_InteractionManager: {fileID: 0}
-  m_Colliders: []
+  m_Colliders:
+  - {fileID: 8332342975025716192}
   m_InteractionLayers:
     m_Bits: 1
   m_DistanceCalculationMode: 1
@@ -212,3 +215,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   hoverScaleMultiplier: 1.6
   infoPanel: {fileID: 0}
+  actionPanel: {fileID: 0}
+--- !u!114 &4755052459434653125
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5397153013529813659}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4c32dfebc029f1448f8b0dd47ae66fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
