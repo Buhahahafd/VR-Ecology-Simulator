@@ -19,8 +19,8 @@ namespace SpaceDebris
     }
 
     /// <summary>
-    /// Periodically evaluates proximity between all active satellites and assigns
-    /// a collision risk level to each one based on its nearest neighbour distance.
+    /// Periodically evaluates proximity between all active satellites (and debris)
+    /// and assigns a collision risk level to each one based on its nearest neighbour distance.
     ///
     /// Also computes estimated time to closest approach (TCA) and a four-tier
     /// DangerLevel for use in the UI and consequence systems.
@@ -63,8 +63,11 @@ namespace SpaceDebris
 
         // ── Events ────────────────────────────────────────────────────────────
 
-        /// <summary>Raised when a satellite's risk level changes.</summary>
+        /// <summary>Raised when a satellite's risk level changes (satellite-satellite pair).</summary>
         public event System.Action<SatelliteObject, SatelliteObject, RiskLevel> OnSatelliteRiskChanged;
+
+        /// <summary>Raised when a satellite's risk changes due to debris proximity.</summary>
+        public event System.Action<SatelliteObject, DebrisObject, RiskLevel> OnDebrisRiskChanged;
 
         // Kept for DangerLineRenderer compatibility.
         public event System.Action<SatelliteObject, DebrisObject, RiskLevel> OnSatelliteRiskChangedLegacy;
@@ -102,8 +105,8 @@ namespace SpaceDebris
         public DangerLevel GetDangerLevel(SatelliteObject sat) =>
             riskEntries.TryGetValue(sat, out RiskEntry e) ? e.Danger : DangerLevel.Safe;
 
-        /// <summary>Returns the nearest threatening satellite or null.</summary>
-        public SatelliteObject GetNearestThreat(SatelliteObject sat) =>
+        /// <summary>Returns the nearest threatening orbital object (satellite or debris), or null.</summary>
+        public OrbitalObject GetNearestThreat(SatelliteObject sat) =>
             riskEntries.TryGetValue(sat, out RiskEntry e) ? e.NearestThreat : null;
 
         /// <summary>Returns the world-space distance to the nearest threat in scene units.</summary>
@@ -150,11 +153,12 @@ namespace SpaceDebris
 
                 RiskLevel    maxRisk     = RiskLevel.Low;
                 DangerLevel  danger      = DangerLevel.Safe;
-                SatelliteObject nearestThreat = null;
+                OrbitalObject nearestThreat = null;
                 float nearestDist  = float.MaxValue;
                 float tca          = float.MaxValue;
                 float probability  = 0f;
 
+                // ── Satellite-satellite pairs ────────────────────────────────
                 for (int j = 0; j < satellites.Count; j++)
                 {
                     if (i == j) continue;
@@ -169,13 +173,42 @@ namespace SpaceDebris
                     {
                         nearestDist   = dist;
                         nearestThreat = other;
-
-                        // Estimate TCA using relative velocity projection.
                         tca = EstimateTCA(sat, other, dist);
                     }
 
                     if (risk > maxRisk)   maxRisk = risk;
                     if (dLevel > danger)  danger  = dLevel;
+                }
+
+                // ── Debris-satellite pairs ───────────────────────────────────
+                DebrisObject nearestDebrisThreat = null;
+                RiskLevel debrisMaxRisk = RiskLevel.Low;
+
+                for (int d = 0; d < debrisList.Count; d++)
+                {
+                    DebrisObject debris = debrisList[d];
+                    if (debris == null) continue;
+
+                    float dist = Vector3.Distance(sat.transform.position, debris.transform.position);
+                    RiskLevel    risk   = ClassifyRisk(dist);
+                    DangerLevel  dLevel = ClassifyDanger(dist);
+
+                    if (dist < nearestDist)
+                    {
+                        nearestDist   = dist;
+                        nearestThreat = debris;
+                        tca = EstimateTCA(sat, debris, dist);
+                    }
+
+                    if (risk > maxRisk)   maxRisk = risk;
+                    if (dLevel > danger)  danger  = dLevel;
+
+                    // Track nearest debris separately for the debris-specific event.
+                    if (risk > debrisMaxRisk)
+                    {
+                        debrisMaxRisk = risk;
+                        nearestDebrisThreat = debris;
+                    }
                 }
 
                 // Collision probability ∈ [0,1]: smooth falloff based on distance to high-risk threshold.
@@ -201,10 +234,27 @@ namespace SpaceDebris
                 };
                 sat.SetColor(targetColor);
 
+                // Apply danger colour to nearest debris threat.
+                if (nearestDebrisThreat != null && debrisMaxRisk >= RiskLevel.Medium)
+                {
+                    nearestDebrisThreat.ApplyDangerColor(debrisMaxRisk);
+                }
+
                 bool changed = !existed || prev.Risk != maxRisk;
                 if (changed)
                 {
-                    OnSatelliteRiskChanged?.Invoke(sat, nearestThreat, maxRisk);
+                    // Determine if the threat is a satellite or debris and fire the appropriate event.
+                    SatelliteObject satThreat = nearestThreat as SatelliteObject;
+                    if (satThreat != null)
+                    {
+                        OnSatelliteRiskChanged?.Invoke(sat, satThreat, maxRisk);
+                    }
+
+                    // Fire debris-specific event when debris is the closest or a significant threat.
+                    if (nearestDebrisThreat != null && debrisMaxRisk >= RiskLevel.Medium)
+                    {
+                        OnDebrisRiskChanged?.Invoke(sat, nearestDebrisThreat, debrisMaxRisk);
+                    }
 
                     // Push risk level to orbit path so it changes colour/thickness reactively.
                     if (sat.TryGetComponent<OrbitPathRenderer>(out OrbitPathRenderer opr))
@@ -213,9 +263,12 @@ namespace SpaceDebris
             }
         }
 
-        private static float EstimateTCA(SatelliteObject a, SatelliteObject b, float currentDist)
+        /// <summary>
+        /// Estimates time to closest approach between two orbital objects.
+        /// Uses relative velocity projection onto the separation axis.
+        /// </summary>
+        public static float EstimateTCA(OrbitalObject a, OrbitalObject b, float currentDist)
         {
-            // Approximate: Δv_rel projected onto separation axis.
             Vector3 separation = b.transform.position - a.transform.position;
             Vector3 relVel     = b.GetLinearVelocity() - a.GetLinearVelocity();
 
@@ -247,13 +300,13 @@ namespace SpaceDebris
         {
             public readonly RiskLevel       Risk;
             public readonly DangerLevel     Danger;
-            public readonly SatelliteObject NearestThreat;
+            public readonly OrbitalObject   NearestThreat;
             public readonly float           NearestDistance;
             public readonly float           EstimatedTCA;
             public readonly float           CollisionProbability;
 
             public RiskEntry(RiskLevel risk, DangerLevel danger,
-                             SatelliteObject threat, float dist, float tca, float prob)
+                             OrbitalObject threat, float dist, float tca, float prob)
             {
                 Risk                = risk;
                 Danger              = danger;

@@ -4,31 +4,51 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 /// <summary>
-/// Controls the main menu intro animation sequence:
-/// 1. Title "КОЛЬЦО" fades in with a scale effect.
-/// 2. Pause on the title.
-/// 3. Menu buttons slide up and fade in.
+/// Controls the main menu intro sequence:
+/// 1. Star object animates from y=-4000 to y=0 with ease-out curve (fast start, gentle landing).
+/// 2. Menu canvas fades in as a world-space object fixed relative to XR Origin.
+/// 3. After a hold delay the title fades in, then buttons appear sequentially.
 /// </summary>
 public class MainMenuController : MonoBehaviour
 {
+    [Header("Star Intro Animation")]
+    [SerializeField] private Transform starTransform;
+    [SerializeField] private float starStartY = -4000f;
+    [SerializeField] private float starTargetY = 0f;
+    [SerializeField] private float starIntroDuration = 5f;
+
+    [Tooltip("Controls the star's motion curve: x = normalized time, y = normalized position (0-1). " +
+             "Use a curve that starts steep and flattens toward the end for an ease-out feel.")]
+    [SerializeField] private AnimationCurve starEaseCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
+
+    [SerializeField] private float holdBeforeUIDelay = 1.5f;
+
+    [Header("World-Space Menu Canvas")]
+    [Tooltip("The world-space Canvas parented to XR Origin — stays at a fixed position in the player's space.")]
+    [SerializeField] private GameObject menuCanvasObject;
+
+    [Tooltip("The CanvasGroup on the root Canvas for fade-in.")]
+    [SerializeField] private CanvasGroup menuCanvasGroup;
+
+    [Tooltip("Duration of the menu canvas fade-in after the star lands.")]
+    [SerializeField] private float menuFadeInDuration = 1.0f;
+
     [Header("Title")]
     [SerializeField] private CanvasGroup titleCanvasGroup;
     [SerializeField] private RectTransform titleRectTransform;
 
-    [Header("Menu Panel")]
-    [SerializeField] private CanvasGroup menuCanvasGroup;
-    [SerializeField] private RectTransform menuRectTransform;
-
     [Header("Buttons")]
+    [SerializeField] private CanvasGroup playButtonGroup;
+    [SerializeField] private CanvasGroup quitButtonGroup;
     [SerializeField] private Button playButton;
-    [SerializeField] private Button settingsButton;
     [SerializeField] private Button quitButton;
 
-    [Header("Settings Panel")]
-    [SerializeField] private CanvasGroup settingsCanvasGroup;
+    [Header("VR Ray Input")]
+    [Tooltip("VRMenuRayInput on the MenuController — registers buttons for ray interaction.")]
+    [SerializeField] private VRMenuRayInput vrRayInput;
 
     [Header("Scene Names")]
-    [SerializeField] private string gameSceneName = "Vr";
+    [SerializeField] private string gameSceneName = "Game";
 
     [Header("Music")]
     [SerializeField] private AudioClip menuMusicClip;
@@ -37,12 +57,11 @@ public class MainMenuController : MonoBehaviour
 
     [Header("Animation Settings")]
     [SerializeField] private float titleFadeInDuration = 1.8f;
-    [SerializeField] private float titleHoldDuration = 1.2f;
-    [SerializeField] private float menuFadeInDuration = 1.0f;
-    [SerializeField] private float titleScaleFrom = 0.75f;
-    [SerializeField] private float menuSlideOffsetY = 80f;
+    [SerializeField] private float titleHoldDuration = 1.5f;
+    [SerializeField] private float buttonSequenceDelay = 0.4f;
+    [SerializeField] private float buttonFadeInDuration = 0.8f;
+    [SerializeField] private float titleScaleFrom = 0.8f;
 
-    private Vector2 _menuStartPos;
     private AudioSource _audioSource;
 
     private void Awake()
@@ -53,59 +72,125 @@ public class MainMenuController : MonoBehaviour
 
     private void Start()
     {
-        playButton.onClick.AddListener(OnPlayClicked);
-        settingsButton.onClick.AddListener(OnSettingsClicked);
-        quitButton.onClick.AddListener(OnQuitClicked);
+        if (playButton != null) playButton.onClick.AddListener(OnPlayClicked);
+        if (quitButton != null) quitButton.onClick.AddListener(OnQuitClicked);
 
-        StartCoroutine(PlayIntroSequence());
+        if (vrRayInput != null)
+        {
+            if (playButton != null) vrRayInput.RegisterButton(playButton);
+            if (quitButton != null) vrRayInput.RegisterButton(quitButton);
+        }
+
+        StartCoroutine(RunIntroSequence());
         StartCoroutine(FadeMusicIn());
     }
 
-    // ── Initialisation ──────────────────────────────────────────────────────
+    // ── Initialisation ───────────────────────────────────────────────────────
 
     private void InitialiseState()
     {
-        titleCanvasGroup.alpha = 0f;
-        titleCanvasGroup.interactable = false;
-        titleRectTransform.localScale = new Vector3(titleScaleFrom, titleScaleFrom, 1f);
-
-        menuCanvasGroup.alpha = 0f;
-        menuCanvasGroup.interactable = false;
-        menuCanvasGroup.blocksRaycasts = false;
-
-        // Push menu down so it can slide up into position
-        _menuStartPos = menuRectTransform.anchoredPosition;
-        menuRectTransform.anchoredPosition = new Vector2(
-            _menuStartPos.x,
-            _menuStartPos.y - menuSlideOffsetY);
-
-        if (settingsCanvasGroup != null)
+        if (starTransform != null)
         {
-            settingsCanvasGroup.alpha = 0f;
-            settingsCanvasGroup.interactable = false;
-            settingsCanvasGroup.blocksRaycasts = false;
+            Vector3 pos = starTransform.position;
+            starTransform.position = new Vector3(pos.x, starStartY, pos.z);
         }
+
+        // Canvas is fixed in space — just hide it until the intro ends
+        if (menuCanvasObject != null)
+            menuCanvasObject.SetActive(false);
+
+        if (menuCanvasGroup != null)
+        {
+            menuCanvasGroup.alpha          = 0f;
+            menuCanvasGroup.interactable   = false;
+            menuCanvasGroup.blocksRaycasts = false;
+        }
+
+        if (titleCanvasGroup != null)
+        {
+            titleCanvasGroup.alpha          = 0f;
+            titleCanvasGroup.interactable   = false;
+            titleCanvasGroup.blocksRaycasts = false;
+        }
+
+        if (titleRectTransform != null)
+            titleRectTransform.localScale = new Vector3(titleScaleFrom, titleScaleFrom, 1f);
+
+        if (playButtonGroup != null) SetButtonGroupState(playButtonGroup, 0f, false);
+        if (quitButtonGroup != null) SetButtonGroupState(quitButtonGroup, 0f, false);
     }
 
     private void InitialiseAudio()
     {
         if (menuMusicClip == null) return;
 
-        _audioSource = gameObject.AddComponent<AudioSource>();
-        _audioSource.clip = menuMusicClip;
-        _audioSource.loop = true;
+        _audioSource             = gameObject.AddComponent<AudioSource>();
+        _audioSource.clip        = menuMusicClip;
+        _audioSource.loop        = true;
         _audioSource.spatialBlend = 0f;
-        _audioSource.volume = 0f;
+        _audioSource.volume      = 0f;
         _audioSource.playOnAwake = false;
     }
 
-    // ── Intro Sequence ───────────────────────────────────────────────────────
+    // ── Intro Sequence ────────────────────────────────────────────────────────
 
-    private IEnumerator PlayIntroSequence()
+    private IEnumerator RunIntroSequence()
     {
+        yield return StartCoroutine(AnimateStar());
+        yield return new WaitForSeconds(holdBeforeUIDelay);
+        yield return StartCoroutine(FadeInMenuCanvas());
         yield return StartCoroutine(AnimateTitle());
         yield return new WaitForSeconds(titleHoldDuration);
-        yield return StartCoroutine(AnimateMenu());
+        yield return StartCoroutine(RevealButton(playButtonGroup));
+        yield return new WaitForSeconds(buttonSequenceDelay);
+        yield return StartCoroutine(RevealButton(quitButtonGroup));
+    }
+
+    private IEnumerator AnimateStar()
+    {
+        if (starTransform == null) yield break;
+
+        Vector3 startPos  = starTransform.position;
+        Vector3 targetPos = new Vector3(startPos.x, starTargetY, startPos.z);
+        float   elapsed   = 0f;
+
+        if (starEaseCurve == null || starEaseCurve.length == 0)
+            starEaseCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
+
+        while (elapsed < starIntroDuration)
+        {
+            float normalizedTime = elapsed / starIntroDuration;
+            float curveValue     = starEaseCurve.Evaluate(normalizedTime);
+            starTransform.position = Vector3.LerpUnclamped(startPos, targetPos, curveValue);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        starTransform.position = targetPos;
+    }
+
+    private IEnumerator FadeInMenuCanvas()
+    {
+        if (menuCanvasObject == null) yield break;
+
+        menuCanvasObject.SetActive(true);
+
+        float elapsed = 0f;
+        while (elapsed < menuFadeInDuration)
+        {
+            float t = Mathf.SmoothStep(0f, 1f, elapsed / menuFadeInDuration);
+            if (menuCanvasGroup != null)
+                menuCanvasGroup.alpha = t;
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (menuCanvasGroup != null)
+        {
+            menuCanvasGroup.alpha          = 1f;
+            menuCanvasGroup.interactable   = true;
+            menuCanvasGroup.blocksRaycasts = true;
+        }
     }
 
     private IEnumerator FadeMusicIn()
@@ -117,7 +202,8 @@ public class MainMenuController : MonoBehaviour
         float elapsed = 0f;
         while (elapsed < musicFadeInDuration)
         {
-            _audioSource.volume = Mathf.Lerp(0f, musicTargetVolume, Mathf.SmoothStep(0f, 1f, elapsed / musicFadeInDuration));
+            _audioSource.volume = Mathf.Lerp(0f, musicTargetVolume,
+                Mathf.SmoothStep(0f, 1f, elapsed / musicFadeInDuration));
             elapsed += Time.deltaTime;
             yield return null;
         }
@@ -127,61 +213,54 @@ public class MainMenuController : MonoBehaviour
 
     private IEnumerator AnimateTitle()
     {
-        Vector3 startScale = new Vector3(titleScaleFrom, titleScaleFrom, 1f);
-        float elapsed = 0f;
+        if (titleCanvasGroup == null) yield break;
 
+        Vector3 startScale = titleRectTransform != null
+            ? new Vector3(titleScaleFrom, titleScaleFrom, 1f)
+            : Vector3.one;
+
+        float elapsed = 0f;
         while (elapsed < titleFadeInDuration)
         {
             float t = Mathf.SmoothStep(0f, 1f, elapsed / titleFadeInDuration);
             titleCanvasGroup.alpha = t;
-            titleRectTransform.localScale = Vector3.Lerp(startScale, Vector3.one, t);
+
+            if (titleRectTransform != null)
+                titleRectTransform.localScale = Vector3.Lerp(startScale, Vector3.one, t);
+
             elapsed += Time.deltaTime;
             yield return null;
         }
 
         titleCanvasGroup.alpha = 1f;
-        titleRectTransform.localScale = Vector3.one;
+        if (titleRectTransform != null)
+            titleRectTransform.localScale = Vector3.one;
     }
 
-    private IEnumerator AnimateMenu()
+    private IEnumerator RevealButton(CanvasGroup group)
     {
-        Vector2 startPos = menuRectTransform.anchoredPosition;
-        float elapsed = 0f;
+        if (group == null) yield break;
 
-        while (elapsed < menuFadeInDuration)
+        float elapsed = 0f;
+        while (elapsed < buttonFadeInDuration)
         {
-            float t = Mathf.SmoothStep(0f, 1f, elapsed / menuFadeInDuration);
-            menuCanvasGroup.alpha = t;
-            menuRectTransform.anchoredPosition = Vector2.Lerp(startPos, _menuStartPos, t);
+            group.alpha = Mathf.SmoothStep(0f, 1f, elapsed / buttonFadeInDuration);
             elapsed += Time.deltaTime;
             yield return null;
         }
 
-        menuCanvasGroup.alpha = 1f;
-        menuRectTransform.anchoredPosition = _menuStartPos;
-        menuCanvasGroup.interactable = true;
-        menuCanvasGroup.blocksRaycasts = true;
+        SetButtonGroupState(group, 1f, true);
     }
 
-    // ── Button Handlers ──────────────────────────────────────────────────────
+    // ── Button Handlers ───────────────────────────────────────────────────────
 
-    /// <summary>Loads the main game scene.</summary>
+    /// <summary>Loads the main game scene with a fade transition.</summary>
     public void OnPlayClicked()
     {
-        SceneManager.LoadScene(gameSceneName);
-    }
-
-    /// <summary>Toggles the settings panel visibility with a fade.</summary>
-    public void OnSettingsClicked()
-    {
-        if (settingsCanvasGroup == null) return;
-
-        bool isVisible = settingsCanvasGroup.alpha > 0.5f;
-        float target = isVisible ? 0f : 1f;
-        StopCoroutine(nameof(FadeCanvasGroup));
-        StartCoroutine(FadeCanvasGroup(settingsCanvasGroup, target, 0.4f));
-        settingsCanvasGroup.interactable = !isVisible;
-        settingsCanvasGroup.blocksRaycasts = !isVisible;
+        if (SceneTransitionManager.Instance != null)
+            SceneTransitionManager.Instance.LoadScene(gameSceneName);
+        else
+            SceneManager.LoadScene(gameSceneName);
     }
 
     /// <summary>Exits the application or stops Play mode in the editor.</summary>
@@ -194,20 +273,12 @@ public class MainMenuController : MonoBehaviour
 #endif
     }
 
-    // ── Utility ──────────────────────────────────────────────────────────────
+    // ── Utility ───────────────────────────────────────────────────────────────
 
-    private IEnumerator FadeCanvasGroup(CanvasGroup group, float targetAlpha, float duration)
+    private static void SetButtonGroupState(CanvasGroup group, float alpha, bool interactive)
     {
-        float startAlpha = group.alpha;
-        float elapsed = 0f;
-
-        while (elapsed < duration)
-        {
-            group.alpha = Mathf.Lerp(startAlpha, targetAlpha, Mathf.SmoothStep(0f, 1f, elapsed / duration));
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        group.alpha = targetAlpha;
+        group.alpha          = alpha;
+        group.interactable   = interactive;
+        group.blocksRaycasts = interactive;
     }
 }

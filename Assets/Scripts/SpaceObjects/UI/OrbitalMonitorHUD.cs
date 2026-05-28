@@ -315,12 +315,17 @@ namespace SpaceDebris
 
             if (riskCalculator != null)
             {
-                SatelliteObject threat = riskCalculator.GetNearestThreat(selectedSatellite);
+                OrbitalObject threat = riskCalculator.GetNearestThreat(selectedSatellite);
                 float dist  = riskCalculator.GetNearestThreatDistance(selectedSatellite);
                 float tca   = riskCalculator.GetEstimatedTimeToClosestApproach(selectedSatellite);
                 float prob  = riskCalculator.GetCollisionProbability(selectedSatellite);
 
-                lblApproachObj.text  = threat != null ? (threat.SatelliteData?.objectName ?? threat.name) : "—";
+                string threatName = threat != null
+                    ? ((threat as SatelliteObject)?.SatelliteData?.objectName
+                       ?? threat.GetData()?.objectName
+                       ?? threat.name)
+                    : null;
+                lblApproachObj.text  = threatName ?? "—";
                 lblApproachTime.text = tca < float.MaxValue ? FormatTCA(tca) : "—";
                 lblApproachDist.text = dist < float.MaxValue ? $"{dist * 800f:F0} km" : "—";
                 lblApproachRisk.text = $"{prob * 100f:F0}%";

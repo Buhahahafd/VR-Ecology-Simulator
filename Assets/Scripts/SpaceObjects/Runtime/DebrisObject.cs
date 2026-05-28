@@ -17,6 +17,7 @@ namespace SpaceDebris
 
         private DebrisData debrisData;
         private MaterialPropertyBlock propertyBlock;
+        private EmissionPulse pulse;
 
         private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
         private static readonly int BaseColorID     = Shader.PropertyToID("_BaseColor");
@@ -30,6 +31,11 @@ namespace SpaceDebris
             base.Awake();
             propertyBlock = new MaterialPropertyBlock();
             SwapMeshToCube();
+
+            // Add blinking beacon effect if not already present.
+            pulse = GetComponent<EmissionPulse>();
+            if (pulse == null)
+                pulse = gameObject.AddComponent<EmissionPulse>();
         }
 
         protected override void Update()
@@ -61,6 +67,22 @@ namespace SpaceDebris
                 _                => ColorSafe
             };
 
+            objectRenderer.GetPropertyBlock(propertyBlock);
+            propertyBlock.SetColor(BaseColorID, color);
+            propertyBlock.SetColor(EmissionColorID, color * EmissionIntensity);
+            objectRenderer.SetPropertyBlock(propertyBlock);
+
+            // Sync the pulse base color so blinking uses the updated tint.
+            if (pulse != null)
+                pulse.SetBaseColor(color * EmissionIntensity);
+        }
+
+        /// <summary>
+        /// Sets an arbitrary colour on the debris cube via MaterialPropertyBlock.
+        /// Provides a uniform API with SatelliteObject.SetColor.
+        /// </summary>
+        public void SetColor(Color color)
+        {
             objectRenderer.GetPropertyBlock(propertyBlock);
             propertyBlock.SetColor(BaseColorID, color);
             propertyBlock.SetColor(EmissionColorID, color * EmissionIntensity);

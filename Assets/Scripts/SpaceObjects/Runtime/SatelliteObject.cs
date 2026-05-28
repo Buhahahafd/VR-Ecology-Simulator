@@ -14,10 +14,17 @@ namespace SpaceDebris
         private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
         private static readonly int BaseColorID = Shader.PropertyToID("_BaseColor");
 
+        private EmissionPulse pulse;
+
         protected override void Awake()
         {
             base.Awake();
             propertyBlock = new MaterialPropertyBlock();
+
+            // Add blinking beacon effect if not already present.
+            pulse = GetComponent<EmissionPulse>();
+            if (pulse == null)
+                pulse = gameObject.AddComponent<EmissionPulse>();
         }
 
 
@@ -49,6 +56,10 @@ namespace SpaceDebris
             propertyBlock.SetColor(BaseColorID, color);
             propertyBlock.SetColor(EmissionColorID, color * emissionMultiplier);
             objectRenderer.SetPropertyBlock(propertyBlock);
+
+            // Sync the pulse base color so blinking uses the updated tint.
+            if (pulse != null)
+                pulse.SetBaseColor(color * emissionMultiplier);
         }
 
         public SatelliteData SatelliteData => satelliteData;

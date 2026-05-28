@@ -44,6 +44,12 @@ namespace SpaceDebris
         /// <summary>Approximate world-space velocity vector (units/second), updated each frame.</summary>
         public Vector3 GetLinearVelocity() => linearVelocity;
 
+        /// <summary>Current orbital layer based on live altitude, with fallback to data.</summary>
+        public OrbitType CurrentOrbitLayer =>
+            OrbitLayerManager.Instance != null
+                ? OrbitLayerManager.Instance.ClassifyByAltitude(orbitAltitudeUnits)
+                : (data != null ? data.orbitType : OrbitType.LEO);
+
         protected virtual void Awake()
         {
             objectRenderer = GetComponent<Renderer>();

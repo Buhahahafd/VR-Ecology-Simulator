@@ -103,15 +103,20 @@ namespace SpaceDebris
 
             if (riskCalc != null)
             {
-                SatelliteObject threat = riskCalc.GetNearestThreat(satellite);
+                OrbitalObject threat = riskCalc.GetNearestThreat(satellite);
                 float dist   = riskCalc.GetNearestThreatDistance(satellite);
                 float tca    = riskCalc.GetEstimatedTimeToClosestApproach(satellite);
                 float prob   = riskCalc.GetCollisionProbability(satellite);
                 string action = riskCalc.GetRecommendedAction(satellite);
 
                 sb.AppendLine();
-                sb.AppendLine(threat != null
-                    ? $"Угроза:    {threat.SatelliteData?.objectName ?? threat.name}"
+                string threatName = threat != null
+                    ? ((threat as SatelliteObject)?.SatelliteData?.objectName
+                       ?? threat.GetData()?.objectName
+                       ?? threat.name)
+                    : null;
+                sb.AppendLine(threatName != null
+                    ? $"Угроза:    {threatName}"
                     : "Угроза:    нет");
 
                 if (threat != null && dist < float.MaxValue)
